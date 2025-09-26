@@ -51,13 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($errors)) {
         try {
             // Gera código do cliente
-            $codigo_cliente = generateClientCode($db);
-            
-            // Processa upload da foto
-            $foto_path = null;
-            if (isset($_FILES['foto']) && $_FILES['foto']['error'] === UPLOAD_ERR_OK) {
-                $foto_path = uploadClientPhoto($_FILES['foto'], $codigo_cliente);
-            }
+            $codigo_cliente = getNextClientCode(); // Usando a função de functions.php
             
             // Dados do cliente
             $clientData = [
@@ -80,28 +74,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'nome_pai' => trim($_POST['nome_pai'] ?? ''),
                 'estado_civil' => $_POST['estado_civil'] ?? '',
                 'profissao' => trim($_POST['profissao'] ?? ''),
-                'renda_familiar' => floatval($_POST['renda_familiar'] ?? 0),
                 'observacoes' => trim($_POST['observacoes'] ?? ''),
                 'aceita_parabens' => isset($_POST['aceita_parabens']) ? 1 : 0,
-                'foto_path' => $foto_path,
+                'ativo' => 1, // Cliente ativo por padrão
                 'cadastrado_por_id' => $_SESSION['user_id'],
-                'data_cadastro' => date('Y-m-d H:i:s')
+                'data_cadastro' => date('Y-m-d H:i:s'),
+                'data_modificacao' => date('Y-m-d H:i:s')
             ];
             
             // Insere no banco
-            $sql = "INSERT INTO clientes (" . implode(', ', array_keys($clientData)) . ") VALUES (" . str_repeat('?,', count($clientData) - 1) . "?)";
+            $sql = "INSERT INTO clientes (" . implode(', ', array_keys($clientData)) . ") VALUES (" . rtrim(str_repeat('?,', count($clientData)), ',') . ")";
             $inserted = $db->execute($sql, array_values($clientData));
             
             if ($inserted) {
-                $success = true;
                 $clientId = $db->lastInsertId();
                 
-                // Processa documentos anexados
-                if (isset($_FILES['documentos']) && !empty($_FILES['documentos']['name'][0])) {
-                    uploadClientDocuments($_FILES['documentos'], $clientId);
-                }
-                
-                // Redireciona após sucesso
+                // Redireciona para a página de edição para adicionar foto e documentos
                 header("Location: cliente_editar.php?id=$clientId&success=1");
                 exit;
             } else {
@@ -131,7 +119,6 @@ include 'templates/header.php';
         
         <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 dark:bg-gray-900 p-6">
             
-            <!-- Breadcrumb -->
             <nav class="flex mb-6" aria-label="Breadcrumb">
                 <ol class="inline-flex items-center space-x-1 md:space-x-3">
                     <li class="inline-flex items-center">
@@ -154,7 +141,6 @@ include 'templates/header.php';
                 </ol>
             </nav>
             
-            <!-- Mensagens de Erro -->
             <?php if (!empty($errors)): ?>
                 <div class="mb-6 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
                     <div class="flex items-start">
@@ -173,10 +159,8 @@ include 'templates/header.php';
                 </div>
             <?php endif; ?>
             
-            <!-- Formulário -->
             <form method="POST" enctype="multipart/form-data" class="space-y-6">
                 
-                <!-- Dados Pessoais -->
                 <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700">
                     <div class="p-6 border-b dark:border-gray-700">
                         <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -186,31 +170,7 @@ include 'templates/header.php';
                     </div>
                     <div class="p-6 space-y-6">
                         
-                        <!-- Foto do Cliente -->
-                        <div class="flex items-center gap-6">
-                            <div class="flex-shrink-0">
-                                <img id="foto-preview" 
-                                     src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='none' stroke='%23d1d5db' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2'%3E%3C/path%3E%3Ccircle cx='12' cy='7' r='4'%3E%3C/circle%3E%3C/svg%3E" 
-                                     class="w-24 h-24 rounded-full object-cover border-4 border-gray-200 dark:border-gray-600"
-                                     alt="Foto do cliente">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                    Foto do Cliente
-                                </label>
-                                <input type="file" 
-                                       name="foto" 
-                                       accept="image/*"
-                                       data-preview="foto-preview"
-                                       class="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900 dark:file:text-blue-300">
-                                <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                    PNG, JPG ou JPEG. Máximo 2MB.
-                                </p>
-                            </div>
-                        </div>
-                        
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <!-- Nome Completo -->
                             <div class="md:col-span-2">
                                 <label for="nome_completo" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                     Nome Completo <span class="text-red-500">*</span>
@@ -224,7 +184,6 @@ include 'templates/header.php';
                                        placeholder="Digite o nome completo">
                             </div>
                             
-                            <!-- CPF -->
                             <div>
                                 <label for="cpf" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                     CPF <span class="text-red-500">*</span>
@@ -240,7 +199,6 @@ include 'templates/header.php';
                                        placeholder="000.000.000-00">
                             </div>
                             
-                            <!-- Data de Nascimento -->
                             <div>
                                 <label for="data_nascimento" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                     Data de Nascimento <span class="text-red-500">*</span>
@@ -253,7 +211,6 @@ include 'templates/header.php';
                                        class="input-destacado w-full">
                             </div>
                             
-                            <!-- Sexo -->
                             <div>
                                 <label for="sexo" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                     Sexo <span class="text-red-500">*</span>
@@ -266,7 +223,6 @@ include 'templates/header.php';
                                 </select>
                             </div>
                             
-                            <!-- Estado Civil -->
                             <div>
                                 <label for="estado_civil" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                     Estado Civil
@@ -281,85 +237,18 @@ include 'templates/header.php';
                                 </select>
                             </div>
                         </div>
-                        
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <!-- Nome da Mãe -->
-                            <div>
-                                <label for="nome_mae" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                    Nome da Mãe
-                                </label>
-                                <input type="text" 
-                                       id="nome_mae" 
-                                       name="nome_mae" 
-                                       value="<?php echo htmlspecialchars($_POST['nome_mae'] ?? ''); ?>"
-                                       class="input-destacado w-full"
-                                       placeholder="Nome completo da mãe">
-                            </div>
-                            
-                            <!-- Nome do Pai -->
-                            <div>
-                                <label for="nome_pai" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                    Nome do Pai
-                                </label>
-                                <input type="text" 
-                                       id="nome_pai" 
-                                       name="nome_pai" 
-                                       value="<?php echo htmlspecialchars($_POST['nome_pai'] ?? ''); ?>"
-                                       class="input-destacado w-full"
-                                       placeholder="Nome completo do pai">
-                            </div>
-                        </div>
-                        
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <!-- Profissão -->
-                            <div>
-                                <label for="profissao" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                    Profissão
-                                </label>
-                                <input type="text" 
-                                       id="profissao" 
-                                       name="profissao" 
-                                       value="<?php echo htmlspecialchars($_POST['profissao'] ?? ''); ?>"
-                                       class="input-destacado w-full"
-                                       placeholder="Profissão ou ocupação">
-                            </div>
-                            
-                            <!-- Renda Familiar -->
-                            <div>
-                                <label for="renda_familiar" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                    Renda Familiar
-                                </label>
-                                <div class="relative">
-                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                        <span class="text-gray-500 dark:text-gray-400">R$</span>
-                                    </div>
-                                    <input type="number" 
-                                           id="renda_familiar" 
-                                           name="renda_familiar" 
-                                           step="0.01"
-                                           min="0"
-                                           value="<?php echo htmlspecialchars($_POST['renda_familiar'] ?? ''); ?>"
-                                           class="input-destacado w-full pl-10"
-                                           placeholder="0,00">
-                                </div>
-                            </div>
-                        </div>
-                        
                     </div>
                 </div>
                 
-                <!-- Contato -->
                 <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700">
-                    <div class="p-6 border-b dark:border-gray-700">
+                     <div class="p-6 border-b dark:border-gray-700">
                         <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                             <i data-lucide="phone" class="w-5 h-5"></i>
                             Informações de Contato
                         </h3>
                     </div>
                     <div class="p-6 space-y-6">
-                        
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <!-- Telefone 1 -->
                             <div>
                                 <label for="telefone1" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                     Telefone Principal
@@ -373,7 +262,6 @@ include 'templates/header.php';
                                        placeholder="+55 (11) 99999-9999">
                             </div>
                             
-                            <!-- Telefone 2 -->
                             <div>
                                 <label for="telefone2" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                     Telefone Secundário
@@ -388,7 +276,6 @@ include 'templates/header.php';
                             </div>
                         </div>
                         
-                        <!-- E-mail -->
                         <div>
                             <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                 E-mail
@@ -400,11 +287,9 @@ include 'templates/header.php';
                                    class="input-destacado w-full"
                                    placeholder="cliente@email.com">
                         </div>
-                        
                     </div>
                 </div>
                 
-                <!-- Endereço -->
                 <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700">
                     <div class="p-6 border-b dark:border-gray-700">
                         <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
@@ -414,7 +299,6 @@ include 'templates/header.php';
                     </div>
                     <div class="p-6 space-y-6">
                         
-                        <!-- CEP -->
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div>
                                 <label for="cep" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -439,7 +323,6 @@ include 'templates/header.php';
                         </div>
                         
                         <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-                            <!-- Rua -->
                             <div class="md:col-span-2">
                                 <label for="rua" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                     Rua/Logradouro
@@ -452,7 +335,6 @@ include 'templates/header.php';
                                        placeholder="Nome da rua">
                             </div>
                             
-                            <!-- Número -->
                             <div>
                                 <label for="numero" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                     Número
@@ -465,7 +347,6 @@ include 'templates/header.php';
                                        placeholder="123">
                             </div>
                             
-                            <!-- Complemento -->
                             <div>
                                 <label for="complemento" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                     Complemento
@@ -480,7 +361,6 @@ include 'templates/header.php';
                         </div>
                         
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <!-- Bairro -->
                             <div>
                                 <label for="bairro" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                     Bairro
@@ -493,7 +373,6 @@ include 'templates/header.php';
                                        placeholder="Nome do bairro">
                             </div>
                             
-                            <!-- Cidade -->
                             <div>
                                 <label for="cidade" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                     Cidade
@@ -506,7 +385,6 @@ include 'templates/header.php';
                                        placeholder="Nome da cidade">
                             </div>
                             
-                            <!-- Estado -->
                             <div>
                                 <label for="estado" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                     Estado
@@ -535,74 +413,7 @@ include 'templates/header.php';
                         
                     </div>
                 </div>
-                
-                <!-- Documentos -->
-                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700">
-                    <div class="p-6 border-b dark:border-gray-700">
-                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                            <i data-lucide="file-text" class="w-5 h-5"></i>
-                            Documentos
-                        </h3>
-                    </div>
-                    <div class="p-6">
-                        
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                Anexar Documentos
-                            </label>
-                            <input type="file" 
-                                   name="documentos[]" 
-                                   multiple
-                                   accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                                   class="block w-full text-sm text-gray-500 dark:text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 dark:file:bg-blue-900 dark:file:text-blue-300">
-                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                PDF, DOC, DOCX, JPG, JPEG, PNG. Máximo 5MB por arquivo.
-                            </p>
-                        </div>
-                        
-                    </div>
-                </div>
-                
-                <!-- Observações e Preferências -->
-                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border dark:border-gray-700">
-                    <div class="p-6 border-b dark:border-gray-700">
-                        <h3 class="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                            <i data-lucide="message-square" class="w-5 h-5"></i>
-                            Observações e Preferências
-                        </h3>
-                    </div>
-                    <div class="p-6 space-y-6">
-                        
-                        <!-- Observações -->
-                        <div>
-                            <label for="observacoes" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                Observações
-                            </label>
-                            <textarea id="observacoes" 
-                                      name="observacoes" 
-                                      rows="4"
-                                      class="input-destacado w-full"
-                                      placeholder="Informações adicionais sobre o cliente..."><?php echo htmlspecialchars($_POST['observacoes'] ?? ''); ?></textarea>
-                        </div>
-                        
-                        <!-- Preferências -->
-                        <div>
-                            <label class="flex items-center">
-                                <input type="checkbox" 
-                                       name="aceita_parabens" 
-                                       value="1"
-                                       <?php echo isset($_POST['aceita_parabens']) ? 'checked' : ''; ?>
-                                       class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
-                                <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                                    Cliente aceita receber mensagens de parabéns no aniversário
-                                </span>
-                            </label>
-                        </div>
-                        
-                    </div>
-                </div>
-                
-                <!-- Botões de Ação -->
+
                 <div class="flex items-center justify-between">
                     <a href="clientes.php" class="inline-flex items-center gap-2 px-6 py-3 bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-400 dark:hover:bg-gray-500">
                         <i data-lucide="arrow-left" class="w-4 h-4"></i>
@@ -634,36 +445,7 @@ document.getElementById('cpf').addEventListener('blur', function() {
     const cpf = this.value.replace(/\D/g, '');
     
     if (cpf.length === 11) {
-        // Validação básica de CPF
-        if (!/^(\d)\1{10}$/.test(cpf)) {
-            let sum = 0;
-            for (let i = 0; i < 9; i++) {
-                sum += parseInt(cpf.charAt(i)) * (10 - i);
-            }
-            let remainder = 11 - (sum % 11);
-            if (remainder === 10 || remainder === 11) remainder = 0;
-            
-            if (remainder !== parseInt(cpf.charAt(9))) {
-                this.setCustomValidity('CPF inválido');
-                this.classList.add('border-red-500');
-                return;
-            }
-            
-            sum = 0;
-            for (let i = 0; i < 10; i++) {
-                sum += parseInt(cpf.charAt(i)) * (11 - i);
-            }
-            remainder = 11 - (sum % 11);
-            if (remainder === 10 || remainder === 11) remainder = 0;
-            
-            if (remainder !== parseInt(cpf.charAt(10))) {
-                this.setCustomValidity('CPF inválido');
-                this.classList.add('border-red-500');
-                return;
-            }
-        }
-        
-        // Verifica se CPF já existe
+        // Verifica se CPF já existe via AJAX
         fetch('ajax_handler.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -688,43 +470,6 @@ document.getElementById('cpf').addEventListener('input', function() {
     this.classList.remove('border-red-500');
 });
 
-// Calcula idade automaticamente
-document.getElementById('data_nascimento').addEventListener('change', function() {
-    if (this.value) {
-        const birthDate = new Date(this.value);
-        const today = new Date();
-        let age = today.getFullYear() - birthDate.getFullYear();
-        const monthDiff = today.getMonth() - birthDate.getMonth();
-        
-        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-            age--;
-        }
-        
-        // Mostra a idade calculada (você pode adicionar um campo para isso)
-        console.log('Idade calculada:', age, 'anos');
-    }
-});
-
-// Animação de loading no botão ao submeter
-document.querySelector('form').addEventListener('submit', function() {
-    const button = this.querySelector('button[type="submit"]');
-    const originalContent = button.innerHTML;
-    
-    button.innerHTML = `
-        <div class="flex items-center gap-2">
-            <div class="spinner"></div>
-            Cadastrando...
-        </div>
-    `;
-    button.disabled = true;
-    
-    // Se houver erro, restaura o botão (isso será feito pelo reload da página)
-    setTimeout(() => {
-        button.innerHTML = originalContent;
-        button.disabled = false;
-        lucide.createIcons();
-    }, 10000);
-});
 </script>
 
 <?php include 'templates/footer.php'; ?>
